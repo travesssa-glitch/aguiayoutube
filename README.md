@@ -7,7 +7,10 @@ Roda 100% no seu computador. Use só para conteúdo seu, de domínio público ou
 
 1. **Python 3.9+** — https://www.python.org/downloads/ (marque "Add Python to PATH").
 2. **ffmpeg** (necessário para juntar vídeo+áudio e converter MP3/WAV/FLAC).
-   Windows: abra o Prompt de Comando e rode `winget install Gyan.FFmpeg`. Depois feche e abra o terminal.
+   No **Windows** não precisa fazer nada: na primeira vez o programa baixa sozinho o ffmpeg das releases do
+   https://github.com/GyanD/codexffmpeg (versão "essentials") para a pasta `ffmpeg`, ao lado do `server.py`.
+   Se o download automático falhar, baixe o `essentials_build.zip` nesse link e coloque `ffmpeg.exe` e `ffprobe.exe` na pasta `ffmpeg`.
+   No Mac/Linux: `brew install ffmpeg` ou `sudo apt install ffmpeg`.
 
 ## 2. Ligar o servidor
 

@@ -6,11 +6,14 @@ Requer: yt-dlp, Flask e ffmpeg instalado no sistema.
 import os
 import re
 import shutil
+import sys
 import tempfile
 import threading
 import time
+import urllib.request
 import uuid
 import webbrowser
+import zipfile
 
 import yt_dlp
 from flask import Flask, jsonify, request, send_file, send_from_directory
@@ -28,8 +31,51 @@ LOCK = threading.Lock()
 CODEC_NAMES = {"avc1": "H.264", "vp09": "VP9", "vp9": "VP9", "av01": "AV1", "hev1": "H.265", "hvc1": "H.265"}
 
 
+FFMPEG_DIR = os.path.join(HERE, "ffmpeg")
+GYAN_REPO = "https://github.com/GyanD/codexffmpeg"
+
+
+def find_ffmpeg_dir():
+    """Pasta onde está o ffmpeg: primeiro a nossa (baixada do GyanD/codexffmpeg), depois o PATH."""
+    exe = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    local = os.path.join(FFMPEG_DIR, exe)
+    if os.path.isfile(local):
+        return FFMPEG_DIR
+    found = shutil.which("ffmpeg")
+    return os.path.dirname(found) if found else None
+
+
 def has_ffmpeg():
-    return shutil.which("ffmpeg") is not None
+    return find_ffmpeg_dir() is not None
+
+
+def install_ffmpeg_windows():
+    """Baixa o ffmpeg 'essentials' das releases do GyanD/codexffmpeg para ./ffmpeg (só Windows)."""
+    try:
+        # /releases/latest redireciona para /releases/tag/<versao>
+        req = urllib.request.Request(GYAN_REPO + "/releases/latest", method="HEAD")
+        with urllib.request.urlopen(req, timeout=30) as r:
+            tag = r.geturl().rstrip("/").split("/")[-1]
+        name = f"ffmpeg-{tag}-essentials_build.zip"
+        url = f"{GYAN_REPO}/releases/download/{tag}/{name}"
+        print(f"  Baixando ffmpeg {tag} (GyanD/codexffmpeg)... pode levar um minuto.")
+        zpath = os.path.join(tempfile.gettempdir(), name)
+        urllib.request.urlretrieve(url, zpath)
+        os.makedirs(FFMPEG_DIR, exist_ok=True)
+        with zipfile.ZipFile(zpath) as z:
+            for m in z.namelist():
+                base = os.path.basename(m)
+                if "/bin/" in m and base in ("ffmpeg.exe", "ffprobe.exe"):
+                    with z.open(m) as src, open(os.path.join(FFMPEG_DIR, base), "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+        os.remove(zpath)
+        print("  ffmpeg instalado em", FFMPEG_DIR)
+        return has_ffmpeg()
+    except Exception as e:  # noqa: BLE001
+        print("  Não consegui baixar o ffmpeg automaticamente:", e)
+        print(f"  Baixe manualmente em {GYAN_REPO}/releases (arquivo essentials_build.zip)")
+        print("  e coloque ffmpeg.exe e ffprobe.exe na pasta 'ffmpeg' ao lado do server.py.")
+        return False
 
 
 def clean_text(e):
@@ -153,6 +199,9 @@ def run_job(job_id, p):
         "progress_hooks": [hook],
         "postprocessor_hooks": [pp_hook],
     }
+    ff = find_ffmpeg_dir()
+    if ff:
+        opts["ffmpeg_location"] = ff
 
     if p["kind"] == "video":
         h = p.get("height")
@@ -195,7 +244,7 @@ def api_start():
         return jsonify(error="Link vazio."), 400
     needs_ffmpeg = kind == "video" or data.get("audio_format", "original") != "original"
     if needs_ffmpeg and not has_ffmpeg():
-        return jsonify(error="ffmpeg não encontrado. Instale o ffmpeg (veja o README) e reinicie o servidor."), 400
+        return jsonify(error="ffmpeg não encontrado. Feche e abra o iniciar.bat para ele baixar o ffmpeg (veja o README)."), 400
 
     clean_old()
     height = data.get("height")
@@ -234,8 +283,10 @@ def api_file(job_id):
 
 
 if __name__ == "__main__":
+    if not has_ffmpeg() and sys.platform.startswith("win"):
+        install_ffmpeg_windows()
     print(f"\n  YT Downloader local rodando em http://127.0.0.1:{PORT}")
-    print("  ffmpeg:", "OK" if has_ffmpeg() else "NÃO ENCONTRADO (instale para juntar vídeo+áudio e converter MP3/WAV)")
+    print("  ffmpeg:", "OK" if has_ffmpeg() else "NÃO ENCONTRADO (Mac: brew install ffmpeg | Linux: sudo apt install ffmpeg)")
     print("  Deixe esta janela aberta enquanto usa a extensão.\n")
     if os.environ.get("YTDL_NO_BROWSER") != "1":
         threading.Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}")).start()
